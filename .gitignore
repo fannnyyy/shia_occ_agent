@@ -70,16 +70,16 @@ crashlytics-build.properties
 # Temporary auto-generated Android Assets
 /[Aa]ssets/[Ss]treamingAssets/aa.meta
 /[Aa]ssets/[Ss]treamingAssets/aa/*
-# OCC Pipeline — fichiers lourds
+# OCC Pipeline ï¿½ fichiers lourds
 occ_pipeline/mistral-occ-lora/
 occ_pipeline/occ_dataset.json
 occ_pipeline/occ_dataset_2.json
 occ_pipeline/occ_dataset_3.json
-occ_pipeline/occ_dataset_final.jon
+occ_pipeline/occ_dataset_final.json
 occ_pipeline/__pycache__/
 occ_pipeline/*.pyc
 
-# Unity — fichiers générés
+# Unity ï¿½ fichiers gï¿½nï¿½rï¿½s
 Library/
 Temp/
 Logs/

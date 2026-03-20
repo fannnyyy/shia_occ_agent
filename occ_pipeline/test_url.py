@@ -1,13 +1,13 @@
 import requests
 
 # Test 1 : endpoint OpenWebUI natif
-url1 = "https://beautiful-blackwell.mydocker-run-vd.centralesupelec.fr/api/chat/completions"
+url1 = "https://nostalgic-montalcini.mydocker-run-vd.centralesupelec.fr/api/chat/completions"
 
 # Test 2 : endpoint OpenAI compatible
-url2 = "https://beautiful-blackwell.mydocker-run-vd.centralesupelec.fr/v1/chat/completions"
+url2 = "https://nostalgic-montalcini.mydocker-run-vd.centralesupelec.fr/v1/chat/completions"
 
 # Test 3 : liste des modèles
-url3 = "https://beautiful-blackwell.mydocker-run-vd.centralesupelec.fr/api/models"
+url3 = "https://nostalgic-montalcini.mydocker-run-vd.centralesupelec.fr/api/models"
 
 headers = {
     "Content-Type": "application/json",
