@@ -694,7 +694,7 @@ PrefabInstance:
     - target: {fileID: 2716520221322284018, guid: 2d6065db2e3517b4db090ab89b5ccbff,
         type: 3}
       propertyPath: usePiper
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 2716520221322284018, guid: 2d6065db2e3517b4db090ab89b5ccbff,
         type: 3}
@@ -724,7 +724,7 @@ PrefabInstance:
     - target: {fileID: 2716520221322284018, guid: 2d6065db2e3517b4db090ab89b5ccbff,
         type: 3}
       propertyPath: urlOllama
-      value: https://beautiful-blackwell.mydocker-run-vd.centralesupelec.fr/
+      value: https://nostalgic-montalcini.mydocker-run-vd.centralesupelec.fr/
       objectReference: {fileID: 0}
     - target: {fileID: 2716520221322284018, guid: 2d6065db2e3517b4db090ab89b5ccbff,
         type: 3}
@@ -751,6 +751,11 @@ PrefabInstance:
       propertyPath: usePhonemeGenerator
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 2898898709790559419, guid: 2d6065db2e3517b4db090ab89b5ccbff,
+        type: 3}
+      propertyPath: m_Resource
+      value: 
+      objectReference: {fileID: 8300000, guid: bb0701f817add5543a2fa328b1dbeec3, type: 3}
     - target: {fileID: 3514827005268524591, guid: 2d6065db2e3517b4db090ab89b5ccbff,
         type: 3}
       propertyPath: language
