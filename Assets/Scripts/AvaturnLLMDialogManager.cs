@@ -152,7 +152,7 @@ public class AvaturnLLMDialogManager : MonoBehaviour
         if (conversationList.ArrayValues.Count > numberOfTurn)
             conversationList.ArrayValues.RemoveAt(0);
 
-        SendToChat(conversationList);
+        StartCoroutine(ClassifyThenChat(text, conversationList));
     }
 
     //whisper
@@ -197,7 +197,9 @@ public class AvaturnLLMDialogManager : MonoBehaviour
             return;
 
         var text = res.Result;
-        UserAnalysis(text);
+        //UserAnalysis(text);
+
+
         if (printLanguage)
             text += $"\n\nLanguage: {res.Language}";
         Text textp = textPanel.transform.GetComponentInChildren<Text>().GetComponent<Text>();
@@ -213,7 +215,7 @@ public class AvaturnLLMDialogManager : MonoBehaviour
         if (conversationList.ArrayValues.Count > numberOfTurn)
             conversationList.ArrayValues.RemoveAt(0);
 
-        SendToChat(conversationList);
+        StartCoroutine(ClassifyThenChat(text, conversationList));
     }
 
 
@@ -241,12 +243,17 @@ public class AvaturnLLMDialogManager : MonoBehaviour
      * LLM
      */
 
+    IEnumerator ClassifyThenChat(string userText, JsonValue conversation)
+    {
+        Debug.Log("[OCC] Classification en cours...");
+        yield return StartCoroutine(ClassifyOCC(userText));
+        Debug.Log("[OCC] Classification terminée, envoi au LLM");
+        SendToChat(conversation);
+    }
+
 
     IEnumerator ChatRequest(string url, string json)
     {
-        Debug.Log("[REQUEST] URL : " + url);
-        Debug.Log("[REQUEST] JSON : " + json);
-        Debug.Log("[REQUEST] APIkey : " + APIkey.Substring(0, 5) + "...");
 
         var uwr = new UnityWebRequest(url, "POST");
         byte[] jsonToSend = new System.Text.UTF8Encoding().GetBytes(json);
@@ -266,7 +273,7 @@ public class AvaturnLLMDialogManager : MonoBehaviour
         }
         else
         {
-            Debug.Log("Received: " + uwr.downloadHandler.text);
+            //Debug.Log("Received: " + uwr.downloadHandler.text);
             _response = uwr.downloadHandler.text;
             //retrieve response from the JSON
             JsonValue response = jsonParser.Parse(_response);
@@ -282,8 +289,9 @@ public class AvaturnLLMDialogManager : MonoBehaviour
             InformationDisplay(responseString);
             //_response = ProcessAffectiveContent(responseString);
             _response = responseString;
-            LLMAnalysis(_response);
-            StartCoroutine(ClassifyOCC(_response)); 
+            //LLMAnalysis(_response);
+            //StartCoroutine(ClassifyOCC(_response)); 
+ 
 
             JsonValue assistantTurn = new JsonValue(JsonType.Object);
             JsonValue assistantRole = new JsonValue(JsonType.String);
@@ -385,6 +393,9 @@ public class AvaturnLLMDialogManager : MonoBehaviour
         
         string emotionalHint = computationalModel != null ? computationalModel.GetPersonalityHint() : "neutral and balanced";
         string fullPreprompt = preprompt + " You are currently feeling : " + emotionalHint + ".";
+        
+        Debug.Log("[PREPROMPT] Émotion dominante: " + computationalModel.GetCurrentEmotion() + " | Hint: " + emotionalHint);
+
         systemContent.StringValue = Regex.Replace(Regex.Replace(fullPreprompt, "[\"\']", ""), "\\s", " ");
 
 //systemContent.StringValue = "Tu t'appelles John et tu r�ponds avec un niveau de patience qui va de 1, tr�s patient, � 5, tr�s impatient. Le niveau de patience actuelle est �gale � :" +computationalModel.getEmotion();
@@ -410,7 +421,7 @@ public class AvaturnLLMDialogManager : MonoBehaviour
             endPointS = "api/chat";
         }
         string finalUrl = urlOllama + endPointS;
-        Debug.Log("[URL] " + finalUrl);
+
         StartCoroutine(ChatRequest(urlOllama + endPointS, data.ToJsonString()));
     }
 
