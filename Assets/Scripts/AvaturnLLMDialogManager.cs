@@ -14,6 +14,7 @@ using Button = UnityEngine.UI.Button;
 using Debug = UnityEngine.Debug;
 using Text = UnityEngine.UI.Text;
 
+
 public enum EndPoint
 {
         OpenWebUI,
@@ -67,6 +68,8 @@ public class AvaturnLLMDialogManager : MonoBehaviour
     private JsonParser jsonParser = new JsonParser();
     private JsonValue conversationList = new JsonValue(JsonType.Array);
 
+    private GenerateConversationJSON _conv;
+
     //LLM
 
     public string urlOllama;
@@ -76,6 +79,11 @@ public class AvaturnLLMDialogManager : MonoBehaviour
     [TextArea(15, 20)]
     public string preprompt;
     private string _response;
+
+    private string _lastUserText = "";
+    private string _lastEmotion = "";
+    private string _lastHint = "";
+    private string _lastPreprompt = "";
 
     //piper
     public bool usePiper = true;
@@ -123,6 +131,8 @@ public class AvaturnLLMDialogManager : MonoBehaviour
         whisper.OnNewSegment += OnNewSegment;
         microphoneRecord.OnRecordStop += OnRecordStop;
 
+        _conv = gameObject.AddComponent<GenerateConversationJSON>();
+
     }
 
     private void DictationRecognizer_DictationComplete(DictationCompletionCause cause)
@@ -153,6 +163,7 @@ public class AvaturnLLMDialogManager : MonoBehaviour
             conversationList.ArrayValues.RemoveAt(0);
 
         StartCoroutine(ClassifyThenChat(text, conversationList));
+        _lastUserText = text;
     }
 
     //whisper
@@ -198,7 +209,7 @@ public class AvaturnLLMDialogManager : MonoBehaviour
 
         var text = res.Result;
         //UserAnalysis(text);
-
+        _lastUserText = text;
 
         if (printLanguage)
             text += $"\n\nLanguage: {res.Language}";
@@ -216,6 +227,7 @@ public class AvaturnLLMDialogManager : MonoBehaviour
             conversationList.ArrayValues.RemoveAt(0);
 
         StartCoroutine(ClassifyThenChat(text, conversationList));
+        
     }
 
 
@@ -305,6 +317,16 @@ public class AvaturnLLMDialogManager : MonoBehaviour
                 conversationList.ArrayValues.RemoveAt(0);
             
             PlayAudio(_response);
+
+            if (_conv != null)
+                _conv.LogTurn(
+                    _lastHint,
+                    _lastPreprompt,
+                    _lastUserText,
+                    responseString,
+                    _lastEmotion,
+                    computationalModel.GetCurrentEmotion().ToString()
+                );
         }
     }
 
@@ -393,6 +415,9 @@ public class AvaturnLLMDialogManager : MonoBehaviour
         
         string emotionalHint = computationalModel != null ? computationalModel.GetPersonalityHint() : "neutral and balanced";
         string fullPreprompt = preprompt + " You are currently feeling : " + emotionalHint + ".";
+
+        _lastHint = emotionalHint;
+        _lastPreprompt = fullPreprompt;
         
         Debug.Log("[PREPROMPT] Émotion dominante: " + computationalModel.GetCurrentEmotion() + " | Hint: " + emotionalHint);
 
@@ -640,7 +665,10 @@ public class AvaturnLLMDialogManager : MonoBehaviour
 
             // Met à jour le modèle émotionnel
             if (Enum.TryParse(emotion, out OccEmotion occEmotion))
-                computationalModel.UpdateEmotion(occEmotion, confidence);
+                {
+                    computationalModel.UpdateEmotion(occEmotion, confidence);
+                    _lastEmotion = emotion;
+                }
         }
     }
 
