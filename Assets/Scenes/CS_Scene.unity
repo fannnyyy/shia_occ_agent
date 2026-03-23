@@ -704,12 +704,10 @@ PrefabInstance:
     - target: {fileID: 2716520221322284018, guid: 2d6065db2e3517b4db090ab89b5ccbff,
         type: 3}
       propertyPath: preprompt
-      value: "Tu t'appelles Mike et tu es un guide pour les nouveaux \xE9tudiants
-        de CentraleSupelec. Tu fais des r\xE9ponses courtes sans mentionner ton \xE9tat
-        \xE9motionnel. Tes r\xE9ponses ne contiennent que le contenu de ce que tu
-        dis. Tu as un niveau de patience avec les \xE9tudiants qui va de 0 (tr\xE8s
-        agac\xE9 et impatient) \xE0 100 (tr\xE8s patient). Ton niveau actuel est
-        de 80."
+      value: "Tu t'appelles Mike et tu es un sp\xE9cialiste des films. Tu aimes parler
+        de films et tu t'interesse \xE0 l'avis qu'on les autres sur leurs films pr\xE9f\xE9r\xE9s.
+        Tu fais des r\xE9ponses courtes sans mentionner ton \xE9tat \xE9motionnel.
+        Tes r\xE9ponses ne contiennent que le contenu de ce que tu dis. "
       objectReference: {fileID: 0}
     - target: {fileID: 2716520221322284018, guid: 2d6065db2e3517b4db090ab89b5ccbff,
         type: 3}
@@ -724,7 +722,7 @@ PrefabInstance:
     - target: {fileID: 2716520221322284018, guid: 2d6065db2e3517b4db090ab89b5ccbff,
         type: 3}
       propertyPath: urlOllama
-      value: https://trusting-matsumoto.mydocker-run-vd.centralesupelec.fr/
+      value: https://pensive-elgamal.mydocker-run-vd.centralesupelec.fr/
       objectReference: {fileID: 0}
     - target: {fileID: 2716520221322284018, guid: 2d6065db2e3517b4db090ab89b5ccbff,
         type: 3}
@@ -779,7 +777,11 @@ PrefabInstance:
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
-    m_AddedComponents: []
+    m_AddedComponents:
+    - targetCorrespondingSourceObject: {fileID: 445348291142154115, guid: 2d6065db2e3517b4db090ab89b5ccbff,
+        type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 1687096034}
   m_SourcePrefab: {fileID: 100100000, guid: 2d6065db2e3517b4db090ab89b5ccbff, type: 3}
 --- !u!114 &1160543796 stripped
 MonoBehaviour:
@@ -1015,7 +1017,7 @@ MonoBehaviour:
     type: 3}
   m_PrefabInstance: {fileID: 1064046513}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
+  m_GameObject: {fileID: 1687096027}
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 3bc03a4c19604ea394e364f8fc632928, type: 3}
@@ -1033,7 +1035,7 @@ MonoBehaviour:
     type: 3}
   m_PrefabInstance: {fileID: 1064046513}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
+  m_GameObject: {fileID: 1687096027}
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: de00d8c1aa067a14691629ea8a19fae1, type: 3}
@@ -1045,7 +1047,7 @@ MonoBehaviour:
     type: 3}
   m_PrefabInstance: {fileID: 1064046513}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
+  m_GameObject: {fileID: 1687096027}
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: d9370225a2ca94276b870d5f87b0db55, type: 3}
@@ -1057,7 +1059,7 @@ MonoBehaviour:
     type: 3}
   m_PrefabInstance: {fileID: 1064046513}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
+  m_GameObject: {fileID: 1687096027}
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: d2de879243f4e0a43a8f3817600f13a8, type: 3}
@@ -1069,6 +1071,24 @@ Animator:
     type: 3}
   m_PrefabInstance: {fileID: 1064046513}
   m_PrefabAsset: {fileID: 0}
+--- !u!1 &1687096027 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 445348291142154115, guid: 2d6065db2e3517b4db090ab89b5ccbff,
+    type: 3}
+  m_PrefabInstance: {fileID: 1064046513}
+  m_PrefabAsset: {fileID: 0}
+--- !u!114 &1687096034
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1687096027}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f8c6de1847d31744da131567a046be27, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
 --- !u!4 &1687821521 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 6539434829905830805, guid: 2d6065db2e3517b4db090ab89b5ccbff,
