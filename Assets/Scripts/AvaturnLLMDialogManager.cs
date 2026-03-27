@@ -15,6 +15,8 @@ using Debug = UnityEngine.Debug;
 using Text = UnityEngine.UI.Text;
 
 
+
+
 public enum EndPoint
 {
         OpenWebUI,
@@ -39,6 +41,14 @@ public enum OccEmotion
 */
 public class AvaturnLLMDialogManager : MonoBehaviour
 {
+
+    // Variable publique pour activer/désactiver OCC
+    public bool useOCC = true;
+
+    public bool accepteInput = true;
+
+    // Référence à l'ExperienceManager
+    public ExperienceManager experienceManager;
 
     public AudioSource audioSource;
 
@@ -137,7 +147,8 @@ public class AvaturnLLMDialogManager : MonoBehaviour
 
     private void DictationRecognizer_DictationComplete(DictationCompletionCause cause)
     {
-        button.GetComponentInChildren<Text>().text = "Dictation";
+        if (button != null && button.GetComponentInChildren<Text>() != null)
+            button.GetComponentInChildren<Text>().text = "Dictation";
     }
 
     private void DictationRecognizer_DictationError(string error, int hresult)
@@ -149,6 +160,8 @@ public class AvaturnLLMDialogManager : MonoBehaviour
 
     private void DictationRecognizer_DictationResult(string text, ConfidenceLevel confidence)
     {
+        if (!accepteInput) return;
+
         Text textp = textPanel.transform.GetComponentInChildren<Text>().GetComponent<Text>();
         textp.text = text;
         JsonValue userTurn = new JsonValue(JsonType.Object);
@@ -201,6 +214,7 @@ public class AvaturnLLMDialogManager : MonoBehaviour
 
     private async void OnRecordStop(AudioChunk audioChunk)
     {
+        if (!accepteInput) return;
         _buffer = "";
 
         var res = await whisper.GetTextAsync(audioChunk.Data, audioChunk.Frequency, audioChunk.Channels);
@@ -257,9 +271,12 @@ public class AvaturnLLMDialogManager : MonoBehaviour
 
     IEnumerator ClassifyThenChat(string userText, JsonValue conversation)
     {
-        Debug.Log("[OCC] Classification en cours...");
-        yield return StartCoroutine(ClassifyOCC(userText));
-        Debug.Log("[OCC] Classification terminée, envoi au LLM");
+        if (useOCC)
+        {
+            Debug.Log("[OCC] Classification en cours...");
+            yield return StartCoroutine(ClassifyOCC(userText));
+            Debug.Log("[OCC] Classification terminée, envoi au LLM");
+        }
         SendToChat(conversation);
     }
 
@@ -325,8 +342,14 @@ public class AvaturnLLMDialogManager : MonoBehaviour
                     _lastUserText,
                     responseString,
                     _lastEmotion,
-                    computationalModel.GetCurrentEmotion().ToString()
+                    computationalModel.GetCurrentEmotion().ToString(),
+                    useOCC ? "ConvA" : "ConvB"
                 );
+            
+            Debug.Log("[EXP] experienceManager null ? " + (experienceManager == null));
+            Debug.Log("[EXP] OnEchangeComplete appelé");
+            if (experienceManager != null)
+                experienceManager.OnEchangeComplete();
         }
     }
 
@@ -413,7 +436,10 @@ public class AvaturnLLMDialogManager : MonoBehaviour
         systemRole.StringValue = "system";
         JsonValue systemContent = new JsonValue(JsonType.String);
         
-        string emotionalHint = computationalModel != null ? computationalModel.GetPersonalityHint() : "neutral and balanced";
+        string emotionalHint = (useOCC && computationalModel != null) 
+            ? computationalModel.GetPersonalityHint() 
+            : "neutral and balanced";
+
         string fullPreprompt = preprompt + " You are currently feeling : " + emotionalHint + ".";
 
         _lastHint = emotionalHint;
