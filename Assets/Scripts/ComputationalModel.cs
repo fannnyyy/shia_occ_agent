@@ -202,5 +202,12 @@ namespace Assets.Scripts
             float intensity = totalScore > 0 ? Mathf.Clamp01(bestScore / totalScore) : 0f;
             return (best, intensity);
         }
+
+        public void Reset()
+        {
+            _history.Clear();
+            _currentEmotion = OccEmotion.JOY;
+            _currentIntensity = 0f;
+        }
     }
 }

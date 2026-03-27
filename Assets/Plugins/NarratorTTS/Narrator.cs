@@ -38,7 +38,7 @@ namespace ACTA
 
         public static Narrator theVoice = null;
 
-        public int voiceIdx = 0;
+        public int voiceIdx = 1;
 
         static List<string> keyValue = new List<string>();
 

@@ -53,6 +53,14 @@ public enum ExperimentPhase { Intro, ConvA, Transition, ConvB, End }
 public class AvaturnLLMDialogManager : MonoBehaviour
 {
 
+    // Variable publique pour activer/désactiver OCC
+    public bool useOCC = true;
+
+    public bool accepteInput = true;
+
+    // Référence à l'ExperienceManager
+    public ExperienceManager experienceManager;
+
     public AudioSource audioSource;
     public float volume = 0.5f;
 
@@ -132,7 +140,6 @@ public class AvaturnLLMDialogManager : MonoBehaviour
         "Vous pouvez maintenant remplir le formulaire.";
 
     private int _userTurnCount = 0;
-    private bool _occActive = true;
 
     // ── Start ─────────────────────────────────────────────────────────────
     void Start()
@@ -175,6 +182,7 @@ public class AvaturnLLMDialogManager : MonoBehaviour
     IEnumerator RunIntro()
     {
         currentPhase = ExperimentPhase.Intro;
+        accepteInput = false;
         button.GetComponent<Button>().interactable = false;
         InformationDisplay(introText);
         PlayAudio(introText);
@@ -184,7 +192,8 @@ public class AvaturnLLMDialogManager : MonoBehaviour
 
         currentPhase = ExperimentPhase.ConvA;
         _userTurnCount = 0;
-        _occActive = true;
+        useOCC = true;
+        accepteInput = true;
         button.GetComponent<Button>().interactable = true;
         InformationDisplay("— Conversation A — (modèle émotionnel actif)");
         Debug.Log("[PROTOCOLE] Phase : ConvA — OCC actif");
@@ -193,11 +202,12 @@ public class AvaturnLLMDialogManager : MonoBehaviour
     IEnumerator RunTransition()
     {
         currentPhase = ExperimentPhase.Transition;
+        accepteInput = false;
         button.GetComponent<Button>().interactable = false;
 
         // Reset mémoire conversationnelle + émotions OCC
         conversationList.ArrayValues.Clear();
-        computationalModel.ResetEmotions();
+        computationalModel.Reset();
         _lastEmotion = "";
         _lastHint = "";
 
@@ -208,7 +218,8 @@ public class AvaturnLLMDialogManager : MonoBehaviour
 
         currentPhase = ExperimentPhase.ConvB;
         _userTurnCount = 0;
-        _occActive = false;
+        useOCC = false;
+        accepteInput = true;
         button.GetComponent<Button>().interactable = true;
         InformationDisplay("— Conversation B — (modèle émotionnel désactivé)");
         Debug.Log("[PROTOCOLE] Phase : ConvB — OCC inactif");
@@ -217,6 +228,7 @@ public class AvaturnLLMDialogManager : MonoBehaviour
     IEnumerator RunEnd()
     {
         currentPhase = ExperimentPhase.End;
+        accepteInput = false;
         button.GetComponent<Button>().interactable = false;
         InformationDisplay(endText);
         PlayAudio(endText);
@@ -262,17 +274,15 @@ public class AvaturnLLMDialogManager : MonoBehaviour
         }
 
         // Appel LLM normal — OCC actif ou non selon la phase
-        if (_occActive)
-            StartCoroutine(ClassifyThenChat(text, conversationList));
-        else
-            SendToChat(conversationList);
+        StartCoroutine(ClassifyThenChat(text, conversationList));
     }
 
     // ── Dictation ────────────────────────────────────────────────────────
 
     private void DictationRecognizer_DictationComplete(DictationCompletionCause cause)
     {
-        button.GetComponentInChildren<Text>().text = "Dictation";
+        if (button != null && button.GetComponentInChildren<Text>() != null)
+            button.GetComponentInChildren<Text>().text = "Dictation";
     }
 
     private void DictationRecognizer_DictationError(string error, int hresult)
@@ -283,6 +293,7 @@ public class AvaturnLLMDialogManager : MonoBehaviour
 
     private void DictationRecognizer_DictationResult(string text, ConfidenceLevel confidence)
     {
+        if (!accepteInput) return;
         Text textp = textPanel.transform.GetComponentInChildren<Text>().GetComponent<Text>();
         textp.text = text;
         HandleUserInput(text);
@@ -292,7 +303,9 @@ public class AvaturnLLMDialogManager : MonoBehaviour
 
     private async void OnRecordStop(AudioChunk audioChunk)
     {
+        if (!accepteInput) return;
         _buffer = "";
+
         var res = await whisper.GetTextAsync(audioChunk.Data, audioChunk.Frequency, audioChunk.Channels);
         if (res == null)
             return;
@@ -351,9 +364,12 @@ public class AvaturnLLMDialogManager : MonoBehaviour
 
     IEnumerator ClassifyThenChat(string userText, JsonValue conversation)
     {
-        Debug.Log("[OCC] Classification en cours...");
-        yield return StartCoroutine(ClassifyOCC(userText));
-        Debug.Log("[OCC] Classification terminée, envoi au LLM");
+        if (useOCC)
+        {
+            Debug.Log("[OCC] Classification en cours...");
+            yield return StartCoroutine(ClassifyOCC(userText));
+            Debug.Log("[OCC] Classification terminée, envoi au LLM");
+        }
         SendToChat(conversation);
     }
 
@@ -408,8 +424,13 @@ public class AvaturnLLMDialogManager : MonoBehaviour
                     responseString,
                     _lastEmotion,
                     computationalModel.GetCurrentEmotion().ToString(),
-                    currentPhase.ToString()
+                    useOCC ? "ConvA" : "ConvB"
                 );
+
+            Debug.Log("[EXP] experienceManager null ? " + (experienceManager == null));
+            Debug.Log("[EXP] OnEchangeComplete appelé");
+            if (experienceManager != null)
+                experienceManager.OnEchangeComplete();
         }
     }
 
@@ -466,17 +487,17 @@ public class AvaturnLLMDialogManager : MonoBehaviour
         systemRole.StringValue = "system";
         JsonValue systemContent = new JsonValue(JsonType.String);
 
-        // OCC inactif en ConvB : pas d'indice émotionnel injecté dans le preprompt
-        string emotionalHint = (_occActive && computationalModel != null)
+        string emotionalHint = (useOCC && computationalModel != null)
             ? computationalModel.GetPersonalityHint()
             : "neutral and balanced";
+
         string fullPreprompt = preprompt + " You are currently feeling : " + emotionalHint + ".";
 
         _lastHint = emotionalHint;
         _lastPreprompt = fullPreprompt;
 
         Debug.Log("[PREPROMPT] Émotion dominante: " +
-            (_occActive ? computationalModel.GetCurrentEmotion().ToString() : "N/A (OCC off)") +
+            (useOCC ? computationalModel.GetCurrentEmotion().ToString() : "N/A (OCC off)") +
             " | Hint: " + emotionalHint);
 
         systemContent.StringValue = Regex.Replace(Regex.Replace(fullPreprompt, "[\"\']", ""), "\\s", " ");
