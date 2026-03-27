@@ -139,6 +139,18 @@ namespace Assets.Scripts
         /// <summary>Indique si l'intensité est suffisante pour afficher une expression.</summary>
         public bool ShouldExpressEmotion() => _currentIntensity >= expressionThreshold;
 
+        /// <summary>
+        /// Réinitialise complètement l'état émotionnel (historique, émotion courante, intensité).
+        /// Appelé lors de la transition entre Conversation A et B pour repartir de zéro.
+        /// </summary>
+        public void ResetEmotions()
+        {
+            _history.Clear();
+            _currentEmotion = OccEmotion.JOY;
+            _currentIntensity = 0f;
+            Debug.Log("[OCC] Émotions réinitialisées.");
+        }
+
         // ── Compatibilité avec l'ancien ComputationalModel ────────────────────
         // (Pour ne pas casser le code existant qui appelait getEmotion())
 
