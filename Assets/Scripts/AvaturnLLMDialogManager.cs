@@ -95,8 +95,24 @@ public class AvaturnLLMDialogManager : MonoBehaviour
     public EndPoint endPoint = EndPoint.OpenWebUI;
     public string modelName;
     public string APIkey;
+    [Tooltip("Préprompt ConvA — agent expressif avec modèle OCC")]
     [TextArea(15, 20)]
-    public string preprompt;
+    public string preprompt =
+        "Tu es un agent conversationnel expressif. " +
+        "Tu parles en français. " +
+        "Tu exprimes ouvertement tes émotions dans tes réponses : tu partages ce que tu ressens, " +
+        "tu réagis affectivement à ce que dit l'utilisateur, tu utilises des formules émotionnelles " +
+        "(je suis ravi, ça me touche, je trouve ça fascinant, etc.). " +
+        "Ton état émotionnel actuel doit transparaître naturellement dans ton langage.";
+
+    [Tooltip("Préprompt ConvB — agent neutre sans modèle OCC")]
+    [TextArea(15, 20)]
+    public string prepromptB =
+        "Tu es un assistant conversationnel factuel et neutre. " +
+        "Tu parles en français. " +
+        "Tu réponds de façon informative et concise, sans exprimer d'émotions ni d'opinions personnelles. " +
+        "Tu n'utilises pas de formules affectives. Tu restes descriptif et objectif.";
+
     private string _response;
 
     private string _lastUserText = "";
@@ -487,11 +503,21 @@ public class AvaturnLLMDialogManager : MonoBehaviour
         systemRole.StringValue = "system";
         JsonValue systemContent = new JsonValue(JsonType.String);
 
-        string emotionalHint = (useOCC && computationalModel != null)
-            ? computationalModel.GetPersonalityHint()
-            : "neutral and balanced";
+        string fullPreprompt;
+        string emotionalHint;
 
-        string fullPreprompt = preprompt + " You are currently feeling : " + emotionalHint + ".";
+        if (useOCC && computationalModel != null)
+        {
+            // ConvA : préprompt expressif + hint OCC
+            emotionalHint = computationalModel.GetPersonalityHint();
+            fullPreprompt = preprompt + " Tu ressens actuellement : " + emotionalHint + ". Laisse cette émotion guider ton ton et tes réponses.";
+        }
+        else
+        {
+            // ConvB : préprompt neutre, aucun hint émotionnel
+            emotionalHint = "neutral";
+            fullPreprompt = prepromptB;
+        }
 
         _lastHint = emotionalHint;
         _lastPreprompt = fullPreprompt;
