@@ -21,12 +21,14 @@ public class GenerateConversationJSON : MonoBehaviour
         string replicParticipant,
         string replicAgent,
         string emotionDetectee,
-        string emotionDominante)
+        string emotionDominante,
+        string condition = "")
     {
         _tour++;
         var entry = new Dictionary<string, string>
         {
             { "tour", _tour.ToString() },
+            { "condition", condition },
             { "descripteur_emotionnel_injecte", hintInjecte },
             { "preprompt_complet", prepromptComplet },
             { "replique_participant", replicParticipant },
