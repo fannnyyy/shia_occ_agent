@@ -15,14 +15,11 @@ using Debug = UnityEngine.Debug;
 using Text = UnityEngine.UI.Text;
 
 
-
-
 public enum EndPoint
 {
-        OpenWebUI,
-        Ollama
+    OpenWebUI,
+    Ollama
 };
-
 
 public enum OccEmotion
 {
@@ -33,12 +30,26 @@ public enum OccEmotion
     LOVE, HATE,
     GRATITUDE, ANGER, GRATIFICATION, REMORSE,
 }
+
+/// <summary>
+/// Phases du protocole expérimental.
+/// Intro → ConvA (OCC actif) → Transition (reset) → ConvB (OCC inactif) → End
+/// </summary>
+public enum ExperimentPhase { Intro, ConvA, Transition, ConvB, End }
+
 /*
-* La classe LLMDialogManager permet de centraliser les fonctionnalit�s li�s � l'aspect conversationnel de l'agent en Full Audio en utilisant un LLM h�berg� sur un serveur distant. 
-* ATTENTION : pour faire fonctionner le plugin Whisper de Macoron, il faut ajouter les mod�les dans le r�pertoire 
-* StreamingAssets. Allez voir les pages d�di�es de ces modules pour plus d'explications. Ils ne sont pas fournis par d�faut car ils prennent
-* trop de place.
-*/
+ * AvaturnLLMDialogManager — gestion conversationnelle + protocole expérimental.
+ *
+ * Protocole :
+ *   1. Introduction  : agent parle seul (bouton désactivé)
+ *   2. Conversation A : 5 répliques participant, modèle OCC actif
+ *   3. Transition    : message neutre, reset mémoire + émotions
+ *   4. Conversation B : 5 répliques participant, OCC désactivé
+ *   5. Fin           : agent oriente vers le formulaire
+ *
+ * La transition se déclenche à la FIN de la 5e réplique du participant (ConvA),
+ * sans appel LLM supplémentaire.
+ */
 public class AvaturnLLMDialogManager : MonoBehaviour
 {
 
@@ -51,7 +62,6 @@ public class AvaturnLLMDialogManager : MonoBehaviour
     public ExperienceManager experienceManager;
 
     public AudioSource audioSource;
-
     public float volume = 0.5f;
 
     public Transform informationPanel;
@@ -62,10 +72,10 @@ public class AvaturnLLMDialogManager : MonoBehaviour
     public FacialExpressionAvaturn faceExpression;
     private Animator anim;
 
-    //dictation
+    // dictation
     private DictationRecognizer dictationRecognizer;
 
-    //whisper
+    // whisper
     public bool useWhisper = true;
     public WhisperManager whisper;
     public MicrophoneRecord microphoneRecord;
@@ -73,17 +83,16 @@ public class AvaturnLLMDialogManager : MonoBehaviour
     public bool printLanguage = false;
     private string _buffer;
 
-    //conversation memory
+    // conversation memory
     public int numberOfTurn = 10;
     private JsonParser jsonParser = new JsonParser();
     private JsonValue conversationList = new JsonValue(JsonType.Array);
 
     private GenerateConversationJSON _conv;
 
-    //LLM
-
+    // LLM
     public string urlOllama;
-    public EndPoint endPoint = EndPoint.OpenWebUI; // api/chat/completions
+    public EndPoint endPoint = EndPoint.OpenWebUI;
     public string modelName;
     public string APIkey;
     [TextArea(15, 20)]
@@ -95,40 +104,62 @@ public class AvaturnLLMDialogManager : MonoBehaviour
     private string _lastHint = "";
     private string _lastPreprompt = "";
 
-    //piper
+    // piper
     public bool usePiper = true;
     public int piperPort = 5000;
     public float speakerID = 1;
-
     public bool usePhonemeGenerator = false;
 
-    //ComputationalModel
+    // ComputationalModel
     public ComputationalModelOCC computationalModel;
 
     [Header("Serveur OCC")]
     public string occServerUrl = "http://localhost:5050";
 
-    // Start is called before the first frame update
+    // ── Protocole expérimental ────────────────────────────────────────────
+    [Header("Protocole expérimental")]
+    public ExperimentPhase currentPhase = ExperimentPhase.Intro;
+
+    [Tooltip("Nombre de répliques participant par conversation (A et B)")]
+    public int maxTurnsPerPhase = 5;
+
+    [TextArea(3, 5)]
+    public string introText =
+        "Bonjour ! Je suis votre assistant pour cette expérience. " +
+        "Nous allons avoir deux courtes conversations. " +
+        "Parlez-moi librement, je suis là pour vous écouter.";
+
+    [TextArea(3, 5)]
+    public string transitionText =
+        "Merci pour cette première conversation. " +
+        "Prenons une courte pause avant de commencer la deuxième partie.";
+
+    [TextArea(3, 5)]
+    public string endText =
+        "Merci beaucoup pour votre participation. " +
+        "Vous pouvez maintenant remplir le formulaire.";
+
+    private int _userTurnCount = 0;
+
+    // ── Start ─────────────────────────────────────────────────────────────
     void Start()
     {
         computationalModel = gameObject.GetComponent<ComputationalModelOCC>();
         if (computationalModel == null)
             computationalModel = gameObject.AddComponent<ComputationalModelOCC>();
-        
+
         anim = this.gameObject.GetComponent<Animator>();
         InformationDisplay("");
         Text textp = textPanel.transform.GetComponentInChildren<Text>().GetComponent<Text>();
         textp.text = "";
+
         button = (GameObject)Instantiate(ButtonPrefab);
         button.GetComponentInChildren<Text>().text = "Dictation";
-
         button.GetComponent<Button>().onClick.AddListener(delegate { OnButtonPressed(); });
-
         button.GetComponent<RectTransform>().position = new Vector3(0 * 170.0f + 90.0f, 39.0f, 0.0f);
         button.transform.SetParent(buttonPanel);
 
-
-        //dictation
+        // dictation
         dictationRecognizer = new DictationRecognizer();
         dictationRecognizer.AutoSilenceTimeoutSeconds = 10;
         dictationRecognizer.InitialSilenceTimeoutSeconds = 10;
@@ -136,34 +167,85 @@ public class AvaturnLLMDialogManager : MonoBehaviour
         dictationRecognizer.DictationError += DictationRecognizer_DictationError;
         dictationRecognizer.DictationComplete += DictationRecognizer_DictationComplete;
 
-
-        //whisper
+        // whisper
         whisper.OnNewSegment += OnNewSegment;
         microphoneRecord.OnRecordStop += OnRecordStop;
 
         _conv = gameObject.AddComponent<GenerateConversationJSON>();
 
+        // Lancement automatique de l'introduction
+        StartCoroutine(RunIntro());
     }
 
-    private void DictationRecognizer_DictationComplete(DictationCompletionCause cause)
+    // ── Phases du protocole ───────────────────────────────────────────────
+
+    IEnumerator RunIntro()
     {
-        if (button != null && button.GetComponentInChildren<Text>() != null)
-            button.GetComponentInChildren<Text>().text = "Dictation";
+        currentPhase = ExperimentPhase.Intro;
+        accepteInput = false;
+        button.GetComponent<Button>().interactable = false;
+        InformationDisplay(introText);
+        PlayAudio(introText);
+        // Attend que l'audio se termine
+        yield return new WaitForSeconds(1f);
+        yield return new WaitUntil(() => !audioSource.isPlaying);
+
+        currentPhase = ExperimentPhase.ConvA;
+        _userTurnCount = 0;
+        useOCC = true;
+        accepteInput = true;
+        button.GetComponent<Button>().interactable = true;
+        InformationDisplay("— Conversation A — (modèle émotionnel actif)");
+        Debug.Log("[PROTOCOLE] Phase : ConvA — OCC actif");
     }
 
-    private void DictationRecognizer_DictationError(string error, int hresult)
+    IEnumerator RunTransition()
     {
-        useWhisper = true;
-        button.GetComponentInChildren<Text>().text = "Record";
+        currentPhase = ExperimentPhase.Transition;
+        accepteInput = false;
+        button.GetComponent<Button>().interactable = false;
 
+        // Reset mémoire conversationnelle + émotions OCC
+        conversationList.ArrayValues.Clear();
+        computationalModel.Reset();
+        _lastEmotion = "";
+        _lastHint = "";
+
+        InformationDisplay(transitionText);
+        PlayAudio(transitionText);
+        yield return new WaitForSeconds(1f);
+        yield return new WaitUntil(() => !audioSource.isPlaying);
+
+        currentPhase = ExperimentPhase.ConvB;
+        _userTurnCount = 0;
+        useOCC = false;
+        accepteInput = true;
+        button.GetComponent<Button>().interactable = true;
+        InformationDisplay("— Conversation B — (modèle émotionnel désactivé)");
+        Debug.Log("[PROTOCOLE] Phase : ConvB — OCC inactif");
     }
 
-    private void DictationRecognizer_DictationResult(string text, ConfidenceLevel confidence)
+    IEnumerator RunEnd()
     {
-        if (!accepteInput) return;
+        currentPhase = ExperimentPhase.End;
+        accepteInput = false;
+        button.GetComponent<Button>().interactable = false;
+        InformationDisplay(endText);
+        PlayAudio(endText);
+        yield return new WaitForSeconds(1f);
+        yield return new WaitUntil(() => !audioSource.isPlaying);
+        Debug.Log("[PROTOCOLE] Expérience terminée.");
+    }
 
-        Text textp = textPanel.transform.GetComponentInChildren<Text>().GetComponent<Text>();
-        textp.text = text;
+    // ── Entrée utilisateur (point d'entrée unique) ────────────────────────
+
+    private void HandleUserInput(string text)
+    {
+        if (currentPhase != ExperimentPhase.ConvA && currentPhase != ExperimentPhase.ConvB)
+            return;
+
+        _lastUserText = text;
+
         JsonValue userTurn = new JsonValue(JsonType.Object);
         JsonValue userRole = new JsonValue(JsonType.String);
         userRole.StringValue = "user";
@@ -175,12 +257,67 @@ public class AvaturnLLMDialogManager : MonoBehaviour
         if (conversationList.ArrayValues.Count > numberOfTurn)
             conversationList.ArrayValues.RemoveAt(0);
 
+        _userTurnCount++;
+
+        // 5e réplique ConvA → transition immédiate (pas d'appel LLM)
+        if (currentPhase == ExperimentPhase.ConvA && _userTurnCount >= maxTurnsPerPhase)
+        {
+            StartCoroutine(RunTransition());
+            return;
+        }
+
+        // 5e réplique ConvB → fin de l'expérience (pas d'appel LLM)
+        if (currentPhase == ExperimentPhase.ConvB && _userTurnCount >= maxTurnsPerPhase)
+        {
+            StartCoroutine(RunEnd());
+            return;
+        }
+
+        // Appel LLM normal — OCC actif ou non selon la phase
         StartCoroutine(ClassifyThenChat(text, conversationList));
-        _lastUserText = text;
     }
 
-    //whisper
+    // ── Dictation ────────────────────────────────────────────────────────
 
+    private void DictationRecognizer_DictationComplete(DictationCompletionCause cause)
+    {
+        if (button != null && button.GetComponentInChildren<Text>() != null)
+            button.GetComponentInChildren<Text>().text = "Dictation";
+    }
+
+    private void DictationRecognizer_DictationError(string error, int hresult)
+    {
+        useWhisper = true;
+        button.GetComponentInChildren<Text>().text = "Record";
+    }
+
+    private void DictationRecognizer_DictationResult(string text, ConfidenceLevel confidence)
+    {
+        if (!accepteInput) return;
+        Text textp = textPanel.transform.GetComponentInChildren<Text>().GetComponent<Text>();
+        textp.text = text;
+        HandleUserInput(text);
+    }
+
+    // ── Whisper ──────────────────────────────────────────────────────────
+
+    private async void OnRecordStop(AudioChunk audioChunk)
+    {
+        if (!accepteInput) return;
+        _buffer = "";
+
+        var res = await whisper.GetTextAsync(audioChunk.Data, audioChunk.Frequency, audioChunk.Channels);
+        if (res == null)
+            return;
+
+        var text = res.Result;
+        if (printLanguage)
+            text += $"\n\nLanguage: {res.Language}";
+
+        Text textp = textPanel.transform.GetComponentInChildren<Text>().GetComponent<Text>();
+        textp.text = text;
+        HandleUserInput(text);
+    }
 
     private void OnButtonPressed()
     {
@@ -212,62 +349,18 @@ public class AvaturnLLMDialogManager : MonoBehaviour
         }
     }
 
-    private async void OnRecordStop(AudioChunk audioChunk)
-    {
-        if (!accepteInput) return;
-        _buffer = "";
-
-        var res = await whisper.GetTextAsync(audioChunk.Data, audioChunk.Frequency, audioChunk.Channels);
-        if (res == null)
-            return;
-
-        var text = res.Result;
-        //UserAnalysis(text);
-        _lastUserText = text;
-
-        if (printLanguage)
-            text += $"\n\nLanguage: {res.Language}";
-        Text textp = textPanel.transform.GetComponentInChildren<Text>().GetComponent<Text>();
-        textp.text = text;
-        JsonValue userTurn = new JsonValue(JsonType.Object);
-        JsonValue userRole = new JsonValue(JsonType.String);
-        userRole.StringValue = "user";
-        JsonValue userContent = new JsonValue(JsonType.String);
-        userContent.StringValue = text;
-        userTurn.ObjectValues.Add("role", userRole);
-        userTurn.ObjectValues.Add("content", userContent);
-        conversationList.ArrayValues.Add(userTurn);
-        if (conversationList.ArrayValues.Count > numberOfTurn)
-            conversationList.ArrayValues.RemoveAt(0);
-
-        StartCoroutine(ClassifyThenChat(text, conversationList));
-        
-    }
-
-
-
-
-
     private void OnNewSegment(WhisperSegment segment)
     {
         if (!streamSegments)
             return;
-
         _buffer += segment.Text;
         Text textp = textPanel.transform.GetComponentInChildren<Text>().GetComponent<Text>();
         textp.text = _buffer + "...";
     }
 
-    // Update is called once per frame
-    void Update()
-    {
+    void Update() { }
 
-    }
-
-
-    /*
-     * LLM
-     */
+    // ── LLM ──────────────────────────────────────────────────────────────
 
     IEnumerator ClassifyThenChat(string userText, JsonValue conversation)
     {
@@ -280,10 +373,8 @@ public class AvaturnLLMDialogManager : MonoBehaviour
         SendToChat(conversation);
     }
 
-
     IEnumerator ChatRequest(string url, string json)
     {
-
         var uwr = new UnityWebRequest(url, "POST");
         byte[] jsonToSend = new System.Text.UTF8Encoding().GetBytes(json);
         uwr.uploadHandler = (UploadHandler)new UploadHandlerRaw(jsonToSend);
@@ -291,36 +382,26 @@ public class AvaturnLLMDialogManager : MonoBehaviour
         uwr.SetRequestHeader("Content-Type", "application/json");
         uwr.SetRequestHeader("Authorization", "Bearer " + APIkey);
 
-        //Send the request then wait here until it returns
         yield return uwr.SendWebRequest();
 
         if (uwr.result != UnityWebRequest.Result.Success)
         {
             Debug.Log("Error While Sending: " + uwr.error);
             Debug.Log("Response Code: " + uwr.responseCode);
-            Debug.Log("Response Body: " + uwr.downloadHandler.text); 
+            Debug.Log("Response Body: " + uwr.downloadHandler.text);
         }
         else
         {
-            //Debug.Log("Received: " + uwr.downloadHandler.text);
             _response = uwr.downloadHandler.text;
-            //retrieve response from the JSON
             JsonValue response = jsonParser.Parse(_response);
             String responseString = "";
             if (endPoint == EndPoint.OpenWebUI)
-            {
                 responseString = response.ObjectValues["choices"].ArrayValues[0].ObjectValues["message"].ObjectValues["content"].StringValue;
-            }
             else if (endPoint == EndPoint.Ollama)
-            {
                 responseString = response.ObjectValues["message"].ObjectValues["content"].StringValue;
-            }
+
             InformationDisplay(responseString);
-            //_response = ProcessAffectiveContent(responseString);
             _response = responseString;
-            //LLMAnalysis(_response);
-            //StartCoroutine(ClassifyOCC(_response)); 
- 
 
             JsonValue assistantTurn = new JsonValue(JsonType.Object);
             JsonValue assistantRole = new JsonValue(JsonType.String);
@@ -332,7 +413,7 @@ public class AvaturnLLMDialogManager : MonoBehaviour
             conversationList.ArrayValues.Add(assistantTurn);
             if (conversationList.ArrayValues.Count > numberOfTurn)
                 conversationList.ArrayValues.RemoveAt(0);
-            
+
             PlayAudio(_response);
 
             if (_conv != null)
@@ -345,7 +426,7 @@ public class AvaturnLLMDialogManager : MonoBehaviour
                     computationalModel.GetCurrentEmotion().ToString(),
                     useOCC ? "ConvA" : "ConvB"
                 );
-            
+
             Debug.Log("[EXP] experienceManager null ? " + (experienceManager == null));
             Debug.Log("[EXP] OnEchangeComplete appelé");
             if (experienceManager != null)
@@ -362,18 +443,13 @@ public class AvaturnLLMDialogManager : MonoBehaviour
         uwr.SetRequestHeader("Content-Type", "application/json");
         uwr.SetRequestHeader("Authorization", "Bearer " + APIkey);
 
-        //Send the request then wait here until it returns
         yield return uwr.SendWebRequest();
 
         if (uwr.result != UnityWebRequest.Result.Success)
-        {
             Debug.Log("Error While Sending: " + uwr.error);
-        }
         else
         {
-            Debug.Log("Received: " + uwr.downloadHandler.text);
             _response = uwr.downloadHandler.text;
-            //retrieve response from the JSON
             JsonValue response = jsonParser.Parse(_response);
             computationalModel.UserValues(response.StringValue);
         }
@@ -388,72 +464,48 @@ public class AvaturnLLMDialogManager : MonoBehaviour
         uwr.SetRequestHeader("Content-Type", "application/json");
         uwr.SetRequestHeader("Authorization", "Bearer " + APIkey);
 
-        //Send the request then wait here until it returns
         yield return uwr.SendWebRequest();
 
         if (uwr.result != UnityWebRequest.Result.Success)
-        {
             Debug.Log("Error While Sending: " + uwr.error);
-        }
         else
         {
-            Debug.Log("Received: " + uwr.downloadHandler.text);
             _response = uwr.downloadHandler.text;
-            //retrieve response from the JSON
             JsonValue response = jsonParser.Parse(_response);
             computationalModel.LLMValues(response.StringValue);
         }
     }
 
-
-
-    /*private string ProcessAffectiveContent(string response)
-    {
-        if (response.Contains("{JOY}"))
-        {
-            DisplayAUs(new int[] { 6, 12 }, new int[] { 80, 80 }, 5f);
-            anim.SetTrigger("JOY");
-            return response.Remove(response.IndexOf("{JOY}"), 4);
-        }
-        if (response.Contains("{SAD}"))
-        {
-            DisplayAUs(new int[] { 1, 4, 15 }, new int[] { 60, 60, 30 }, 5f);
-            anim.SetTrigger("SAD");
-            return response.Remove(response.IndexOf("{SAD}"), 4);
-        }
-        return response;
-    }
-
-    */
-
     private void SendToChat(JsonValue conversationList)
     {
         if (conversationList.ArrayValues.Count == 0)
             return;
+
         JsonValue fullConv = new JsonValue(JsonType.Array);
         JsonValue systemTurn = new JsonValue(JsonType.Object);
         JsonValue systemRole = new JsonValue(JsonType.String);
         systemRole.StringValue = "system";
         JsonValue systemContent = new JsonValue(JsonType.String);
-        
-        string emotionalHint = (useOCC && computationalModel != null) 
-            ? computationalModel.GetPersonalityHint() 
+
+        string emotionalHint = (useOCC && computationalModel != null)
+            ? computationalModel.GetPersonalityHint()
             : "neutral and balanced";
 
         string fullPreprompt = preprompt + " You are currently feeling : " + emotionalHint + ".";
 
         _lastHint = emotionalHint;
         _lastPreprompt = fullPreprompt;
-        
-        Debug.Log("[PREPROMPT] Émotion dominante: " + computationalModel.GetCurrentEmotion() + " | Hint: " + emotionalHint);
+
+        Debug.Log("[PREPROMPT] Émotion dominante: " +
+            (useOCC ? computationalModel.GetCurrentEmotion().ToString() : "N/A (OCC off)") +
+            " | Hint: " + emotionalHint);
 
         systemContent.StringValue = Regex.Replace(Regex.Replace(fullPreprompt, "[\"\']", ""), "\\s", " ");
-
-//systemContent.StringValue = "Tu t'appelles John et tu r�ponds avec un niveau de patience qui va de 1, tr�s patient, � 5, tr�s impatient. Le niveau de patience actuelle est �gale � :" +computationalModel.getEmotion();
         systemTurn.ObjectValues.Add("role", systemRole);
         systemTurn.ObjectValues.Add("content", systemContent);
         fullConv.ArrayValues.Add(systemTurn);
         fullConv.ArrayValues.AddRange(conversationList.ArrayValues);
+
         JsonValue data = new JsonValue(JsonType.Object);
         JsonValue modelNameValue = new JsonValue(JsonType.String);
         modelNameValue.StringValue = modelName;
@@ -462,206 +514,9 @@ public class AvaturnLLMDialogManager : MonoBehaviour
         JsonValue streamValue = new JsonValue(JsonType.Boolean);
         streamValue.BoolValue = false;
         data.ObjectValues.Add("stream", streamValue);
-        string endPointS = "";
-        if (endPoint == EndPoint.OpenWebUI)
-        {
-            endPointS = "api/chat/completions";
-        }
-        if (endPoint == EndPoint.Ollama)
-        {
-            endPointS = "api/chat";
-        }
-        string finalUrl = urlOllama + endPointS;
 
+        string endPointS = endPoint == EndPoint.OpenWebUI ? "api/chat/completions" : "api/chat";
         StartCoroutine(ChatRequest(urlOllama + endPointS, data.ToJsonString()));
-    }
-
-    private void UserAnalysis(String content)
-    {
-
-        JsonValue fullConv = new JsonValue(JsonType.Array);
-        JsonValue systemTurn = new JsonValue(JsonType.Object);
-        JsonValue systemRole = new JsonValue(JsonType.String);
-        systemRole.StringValue = "system";
-        JsonValue systemContent = new JsonValue(JsonType.String);
-        systemContent.StringValue = "Tu es un syst�me d'analyse des �motions. Quand je te parle tu r�ponds une valeur enti�re entre 0 et 100 d'intensit� �motionnelle que tu d�tectes dans ma phrase. Tu ne dis rien d'autre que la valeur. Tu ne dis pas un mot, juste la valeur num�rique, comme une machine.";
-        systemTurn.ObjectValues.Add("role", systemRole);
-        systemTurn.ObjectValues.Add("content", systemContent);
-        fullConv.ArrayValues.Add(systemTurn);
-        JsonValue userTurn = new JsonValue(JsonType.Object);
-        JsonValue userRole = new JsonValue(JsonType.String);
-        userRole.StringValue = "user";
-        JsonValue userContent = new JsonValue(JsonType.String);
-        userContent.StringValue = content;
-        userTurn.ObjectValues.Add("role",userRole);
-        userTurn.ObjectValues.Add("content",userContent);
-        fullConv.ArrayValues.Add(userTurn);
-        JsonValue data = new JsonValue(JsonType.Object);
-        JsonValue modelNameValue = new JsonValue(JsonType.String);
-        modelNameValue.StringValue = modelName;
-        data.ObjectValues.Add("model", modelNameValue);
-        data.ObjectValues.Add("messages", fullConv);
-        JsonValue streamValue = new JsonValue(JsonType.Boolean);
-        streamValue.BoolValue = false;
-        data.ObjectValues.Add("stream", streamValue);
-        string endPointS = "";
-        if (endPoint == EndPoint.OpenWebUI)
-        {
-            endPointS = "api/chat/completions";
-        }
-        if (endPoint == EndPoint.Ollama)
-        {
-            endPointS = "api/chat";
-        }
-        StartCoroutine(UserRequest(urlOllama + endPointS, data.ToJsonString()));
-    }
-
-    private void LLMAnalysis(String content)
-    {
-        JsonValue fullConv = new JsonValue(JsonType.Array);
-        JsonValue systemTurn = new JsonValue(JsonType.Object);
-        JsonValue systemRole = new JsonValue(JsonType.String);
-        systemRole.StringValue = "system";
-        JsonValue systemContent = new JsonValue(JsonType.String);
-        systemContent.StringValue = "Tu es un syst�me d'analyse des �motions. Quand je te parle tu r�ponds une valeur enti�re entre 0 et 100 d'intensit� �motionnelle que tu d�tectes dans ma phrase. Tu ne dis rien d'autre que la valeur. Tu ne dis pas un mot, juste la valeur num�rique, comme une machine.";
-        systemTurn.ObjectValues.Add("role", systemRole);
-        systemTurn.ObjectValues.Add("content", systemContent);
-        fullConv.ArrayValues.Add(systemTurn);
-        JsonValue userTurn = new JsonValue(JsonType.Object);
-        JsonValue userRole = new JsonValue(JsonType.String);
-        userRole.StringValue = "user";
-        JsonValue userContent = new JsonValue(JsonType.String);
-        userContent.StringValue = content;
-        userTurn.ObjectValues.Add("role", userRole);
-        userTurn.ObjectValues.Add("content", userContent);
-        fullConv.ArrayValues.Add(userTurn);
-        JsonValue data = new JsonValue(JsonType.Object);
-        JsonValue modelNameValue = new JsonValue(JsonType.String);
-        modelNameValue.StringValue = modelName;
-        data.ObjectValues.Add("model", modelNameValue);
-        data.ObjectValues.Add("messages", fullConv);
-        JsonValue streamValue = new JsonValue(JsonType.Boolean);
-        streamValue.BoolValue = false;
-        data.ObjectValues.Add("stream", streamValue);
-        string endPointS = "";
-        if (endPoint == EndPoint.OpenWebUI)
-        {
-            endPointS = "api/chat/completions";
-        }
-        if (endPoint == EndPoint.Ollama)
-        {
-            endPointS = "api/chat";
-        }
-        StartCoroutine(LLMRequest(urlOllama + endPointS, data.ToJsonString()));
-    }
-
-
-    /*
-     * Cette m�thode permet de jouer un fichier audio depuis le r�pertoire Resources/Sounds dont le nom est de la forme <entier>.mp3 
-     */
-    public void PlayAudio(int a)
-    {
-        try
-        {
-            //Charge un fichier audio depuis le r�pertoire Resources
-            AudioClip music = (AudioClip)Resources.Load("Sounds/" + a);
-            audioSource.PlayOneShot(music, volume);
-        }
-        catch (Exception e)
-        {
-            UnityEngine.Debug.LogException(e);
-        }
-    }
-
-
-    IEnumerator postTTSRequest(string text)
-    {
-        text = Regex.Replace(Regex.Replace(text, "[\"\']", ""), "\\s"," ");
-        var uwr = new UnityWebRequest("http://localhost:"+ piperPort.ToString(), "POST");
-        byte[] jsonToSend = new System.Text.UTF8Encoding().GetBytes("{ \"text\": \"" + text + "\" , \"speaker_id\": " + speakerID.ToString()+"}");
-        uwr.uploadHandler = (UploadHandler)new UploadHandlerRaw(jsonToSend);
-        uwr.downloadHandler = (DownloadHandler)new DownloadHandlerBuffer();
-        uwr.SetRequestHeader("Content-Type", "application/json");
-
-        //Send the request then wait here until it returns
-        yield return uwr.SendWebRequest();
-        byte[] wavData = uwr.downloadHandler.data;
-        if (usePhonemeGenerator)
-        {
-            string json = Wav2VecClient.SendWav(wavData);
-            Debug.Log("Python returned: " + json);
-        }
-        
-        AudioClip clip = WavUtility.ToAudioClip(wavData, "DownloadedClip");
-        audioSource.clip = clip;
-        audioSource.Play();
-    }
-
-
-    /*
-     * Cette m�thode permet de demander � piperTTS de g�n�rer un audio, puis de le jouer, � partir du texte
-     * piperTTS server doit donc �tre lanc� sur la machine.
-     */
-    public void PlayAudio(string text)
-    {
-
-        if (!usePiper)
-        {
-#if UNITY_STANDALONE_WIN
-            Narrator.speak(text);
-#else
-            Debug.Log("Narrator not available");
-#endif
-        }
-        else
-        {
-            StartCoroutine(postTTSRequest(text));
-        }
-    }
-
-
-
-    /*
-     * Cette m�thode affiche du texte dans le panneau d'affichage � gauche de l'UI
-     */
-    public void InformationDisplay(string s)
-    {
-
-        Text text = informationPanel.transform.GetComponentInChildren<Text>().GetComponent<Text>();
-        text.text = s;
-
-    }
-    /*
-     * Cette m�thode affiche le texte de la question dans la partie basse de l'UI
-     */
-    public void DisplayQuestion(string s)
-    {
-        Text text = textPanel.transform.GetComponentInChildren<Text>().GetComponent<Text>();
-        text.text = s;
-    }
-
-    public void EndDialog()
-    {
-
-        anim.SetTrigger("Greet");
-    }
-
-
-    /*
-     * Cette m�thode permet de faire jouer des AUs � l'agent
-     */
-    public void DisplayAUs(int[] aus, int[] intensities, float duration)
-    {
-        faceExpression.setFacialAUs(aus, intensities, duration);
-    }
-
-    /*
-    * Exemple de fonction d�clenchant une expression �motionnelle
-    * intensity_factor devrait �tre entre 0 et 1
-    */
-    public void Doubt(float intensity_factor, float duration)
-    {
-        DisplayAUs(new int[] { 6, 4, 14 }, new int[] { (int)(intensity_factor * 100), (int)(intensity_factor * 80), (int)(intensity_factor * 80) }, duration);
     }
 
     IEnumerator ClassifyOCC(string text)
@@ -689,14 +544,96 @@ public class AvaturnLLMDialogManager : MonoBehaviour
 
             Debug.Log("[OCC] Émotion détectée : " + emotion + " (" + confidence + ")");
 
-            // Met à jour le modèle émotionnel
             if (Enum.TryParse(emotion, out OccEmotion occEmotion))
-                {
-                    computationalModel.UpdateEmotion(occEmotion, confidence);
-                    _lastEmotion = emotion;
-                }
+            {
+                computationalModel.UpdateEmotion(occEmotion, confidence);
+                _lastEmotion = emotion;
+            }
         }
     }
 
+    // ── Audio ─────────────────────────────────────────────────────────────
 
+    public void PlayAudio(int a)
+    {
+        try
+        {
+            AudioClip music = (AudioClip)Resources.Load("Sounds/" + a);
+            audioSource.PlayOneShot(music, volume);
+        }
+        catch (Exception e)
+        {
+            UnityEngine.Debug.LogException(e);
+        }
+    }
+
+    IEnumerator postTTSRequest(string text)
+    {
+        text = Regex.Replace(Regex.Replace(text, "[\"\']", ""), "\\s", " ");
+        var uwr = new UnityWebRequest("http://localhost:" + piperPort.ToString(), "POST");
+        byte[] jsonToSend = new System.Text.UTF8Encoding().GetBytes(
+            "{ \"text\": \"" + text + "\" , \"speaker_id\": " + speakerID.ToString() + "}");
+        uwr.uploadHandler = (UploadHandler)new UploadHandlerRaw(jsonToSend);
+        uwr.downloadHandler = (DownloadHandler)new DownloadHandlerBuffer();
+        uwr.SetRequestHeader("Content-Type", "application/json");
+
+        yield return uwr.SendWebRequest();
+        byte[] wavData = uwr.downloadHandler.data;
+        if (usePhonemeGenerator)
+        {
+            string json = Wav2VecClient.SendWav(wavData);
+            Debug.Log("Python returned: " + json);
+        }
+
+        AudioClip clip = WavUtility.ToAudioClip(wavData, "DownloadedClip");
+        audioSource.clip = clip;
+        audioSource.Play();
+    }
+
+    public void PlayAudio(string text)
+    {
+        if (!usePiper)
+        {
+#if UNITY_STANDALONE_WIN
+            Narrator.speak(text);
+#else
+            Debug.Log("Narrator not available");
+#endif
+        }
+        else
+        {
+            StartCoroutine(postTTSRequest(text));
+        }
+    }
+
+    // ── UI ────────────────────────────────────────────────────────────────
+
+    public void InformationDisplay(string s)
+    {
+        Text text = informationPanel.transform.GetComponentInChildren<Text>().GetComponent<Text>();
+        text.text = s;
+    }
+
+    public void DisplayQuestion(string s)
+    {
+        Text text = textPanel.transform.GetComponentInChildren<Text>().GetComponent<Text>();
+        text.text = s;
+    }
+
+    public void EndDialog()
+    {
+        anim.SetTrigger("Greet");
+    }
+
+    public void DisplayAUs(int[] aus, int[] intensities, float duration)
+    {
+        faceExpression.setFacialAUs(aus, intensities, duration);
+    }
+
+    public void Doubt(float intensity_factor, float duration)
+    {
+        DisplayAUs(new int[] { 6, 4, 14 },
+            new int[] { (int)(intensity_factor * 100), (int)(intensity_factor * 80), (int)(intensity_factor * 80) },
+            duration);
+    }
 }
